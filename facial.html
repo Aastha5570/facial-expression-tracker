@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Face Expression Detection</title>
+    <script src="https://unpkg.com/@tensorflow/tfjs@2.0.0/dist/tf.min.js"></script>
+    <script src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: white;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            margin: 2rem auto;
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 1.5rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        video {
+            width: 100%;
+            display: block;
+            background-color: #000;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .controls {
+            margin: 1rem 0;
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 0.8rem 1.5rem;
+            border: none;
+            border-radius: 50px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .stats {
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-top: 1rem;
+            width: 100%;
+            max-width: 640px;
+        }
+
+        .expression-display {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .expression-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1rem;
+            border-radius: 10px;
+            min-width: 120px;
+            transition: transform 0.3s;
+        }
+
+        .expression-item.active {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.05);
+        }
+
+        .expression-label {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        .expression-value {
+            font-size: 1.2rem;
+        }
+
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 100;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                width: 95%;
+            }
+            
+            .expression-item {
+                min-width: 100px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Loading face detection models...</p>
+    </div>
+
+    <div class="container">
+        <h1>Real-time Face Expression Detection</h1>
+        
+        <div class="video-container">
+            <video id="video" width="640" height="480" autoplay muted></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn">Start Detection</button>
+            <button id="stopBtn">Stop Detection</button>
+        </div>
+
+        <div class="stats">
+            <h2>Facial Expressions</h2>
+            <div class="expression-display" id="expressions">
+                <div class="expression-item" data-expression="neutral">
+                    <span class="expression-label">Neutral</span>
+                    <span class="expression-value" id="neutral">0%</span>
+                </div>
+                <div class="expression-item" data-expression="happy">
+                    <span class="expression-label">Happy</span>
+                    <span class="expression-value" id="happy">0%</span>
+                </div>
+                <div class="expression-item" data-expression="sad">
+                    <span class="expression-label">Sad</span>
+                    <span class="expression-value" id="sad">0%</span>
+                </div>
+                <div class="expression-item" data-expression="angry">
+                    <span class="expression-label">Angry</span>
+                    <span class="expression-value" id="angry">0%</span>
+                </div>
+                <div class="expression-item" data-expression="fearful">
+                    <span class="expression-label">Fearful</span>
+                    <span class="expression-value" id="fearful">0%</span>
+                </div>
+                <div class="expression-item" data-expression="surprised">
+                    <span class="expression-label">Surprised</span>
+                    <span class="expression-value" id="surprised">0%</span>
+                </div>
+                <div class="expression-item" data-expression="disgusted">
+                    <span class="expression-label">Disgusted</span>
+                    <span class="expression-value" id="disgusted">0%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const loadingScreen = document.getElementById('loading');
+        const expressionItems = document.querySelectorAll('.expression-item');
+        
+        // Variables
+        let detectionInterval;
+        let isDetecting = false;
+        
+        // Load models
+        async function loadModels() {
+            try {
+                await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models/');
+                await faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models/');
+                await faceapi.nets.faceExpressionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models/');
+                loadingScreen.style.display = 'none';
+                console.log('Models loaded successfully');
+            } catch (error) {
+                console.error('Error loading models:', error);
+                loadingScreen.querySelector('p').textContent = 'Error loading models. Please ensure you are using HTTPS protocol.';
+            }
+        }
+        
+        // Start video stream
+        async function startVideo() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 }, 
+                    audio: false 
+                });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    // Set canvas dimensions to match video
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                };
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                alert('Could not access the camera. Please ensure you have granted camera permissions.');
+            }
+        }
+        
+        // Detect faces and expressions
+        async function detectFaces() {
+            if (!isDetecting) return;
+            
+            try {
+                const detections = await faceapi.detectAllFaces(video, 
+                    new faceapi.TinyFaceDetectorOptions())
+                    .withFaceLandmarks()
+                    .withFaceExpressions();
+                
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw detections
+                faceapi.draw.drawDetections(canvas, detections);
+                faceapi.draw.drawFaceLandmarks(canvas, detections);
+                
+                // Update expressions
+                if (detections.length > 0) {
+                    const expressions = detections[0].expressions;
+                    updateExpressionDisplay(expressions);
+                }
+            } catch (error) {
+                console.error('Detection error:', error);
+            }
+            
+            // Continue detection
+            detectionInterval = requestAnimationFrame(detectFaces);
+        }
+        
+        // Update expression values in UI
+        function updateExpressionDisplay(expressions) {
+            // Find the dominant expression
+            let dominantExpression = null;
+            let maxProbability = 0;
+            
+            // Reset all expression items
+            expressionItems.forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // Update each expression value
+            for (const [expression, probability] of Object.entries(expressions)) {
+                const element = document.getElementById(expression);
+                if (element) {
+                    const percentage = Math.round(probability * 100);
+                    element.textContent = `${percentage}%`;
+                    
+                    // Track dominant expression
+                    if (probability > maxProbability) {
+                        maxProbability = probability;
+                        dominantExpression = expression;
+                    }
+                }
+            }
+            
+            // Highlight dominant expression
+            if (dominantExpression) {
+                const dominantElement = document.querySelector(`.expression-item[data-expression="${dominantExpression}"]`);
+                if (dominantElement) {
+                    dominantElement.classList.add('active');
+                }
+            }
+        }
+        
+        // Start detection
+        startBtn.addEventListener('click', async () => {
+            if (isDetecting) return;
+            
+            isDetecting = true;
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            detectFaces();
+        });
+        
+        // Stop detection
+        stopBtn.addEventListener('click', () => {
+            isDetecting = false;
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            cancelAnimationFrame(detectionInterval);
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Reset expression display
+            document.querySelectorAll('.expression-value').forEach(el => {
+                el.textContent = '0%';
+            });
+            
+            expressionItems.forEach(item => {
+                item.classList.remove('active');
+            });
+        });
+        
+        // Initialize
+        async function init() {
+            await loadModels();
+            await startVideo();
+            stopBtn.disabled = true;
+            
+            // Display some instructions
+            console.log('Click "Start Detection" to begin face expression analysis');
+        }
+        
+        // Start the application
+        init();
+    </script>
+</body>
+</html>
